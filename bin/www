@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('cms:server');
+var http = require('http');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '2999');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+// 서버 소켓 생성
+var io = require('socket.io')(server);
+// 이벤트 등록
+var rooms = ["게임","드라마","스포츠"];
+io.on('connection', function(socket){
+  //console.log('클라이언트가 접속했다.', socket);
+  // 유저가 최초 채팅방에 진입하여 닉네임을 넣고 전송하는 이벤트
+  socket.on('sendUserId', function(user_id){
+    console.log("접속한 유저 : " ,user_id);
+    //아이디를 저장(기록) => 소켓에 저장
+    socket.user_id = user_id;
+    //방정보를 기록
+    socket.room = rooms[0];
+    //방에 입장(기본방을 무조건 지정한다 : 게임방)
+    // join() <> leave()
+    socket.join(socket.room);
+    //방송 (누가 입장하였습니다.) => 당사자는 빼고
+    socket.broadcast.to( socket.room ).emit("sendMsg", "관리자", socket.user_id + "님이 입장하였습니다.");
+    //당사자한테 방에 입장했음을 알려준다. => 전체 방목록, 입장한 방 정보
+    socket.emit("sendRoomInfo", rooms, socket.room );
+    socket.emit("sendMsg", "관리자", socket.user_id + "님이 입장하였습니다.....");
+
+  });
+  // 클라이언트가 퇴장(페이지가 닫히면) 호출
+  socket.on('disconnect', function(){
+    socket.broadcast.to( socket.room ).emit("sendMsg", "관리자", socket.user_id + "님이 나갔습니다.");
+    socket.leave(socket.room);
+  });
+
+  // 클라이언트가 메세지를 보냈다.
+  socket.on('userMsg', function(msg){
+    io.sockets.in(socket.room).emit("sendMsg", socket.user_id, msg);
+  });
+  
+});
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
